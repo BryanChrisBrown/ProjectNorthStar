@@ -12,16 +12,20 @@ checkerboardHeight = 7
 checkerboardDims = (checkerboardWidth, checkerboardHeight)
 # Termination Criteria for the subpixel corner refinement
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-
+isELP = True;
 #Initialize the Stereo Camera's feed
-frameWidth = 800
+#note I separated the two, the below is the default for the ELP
+frameWidth = 1280
+frameHeight = 480
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, frameWidth)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frameWidth)
-cap.set(cv2.CAP_PROP_CONVERT_RGB, False)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frameHeight)
+if not isELP:
+    cap.set(cv2.CAP_PROP_CONVERT_RGB, False)
 
 # Turn the Rigel Exposure Up
-os.system(".\LFTool.exe xu set leap 30 "+str(6111)+"L")
+if not isELP:
+    os.system(".\LFTool.exe xu set leap 30 "+str(6111)+"L")
 
 # Initialize 3D Visualizer
 frameCount = 0
@@ -36,13 +40,29 @@ while (not (key & 0xFF == ord('q'))):
         # Capture frame-by-frame
         ret, frame = cap.read()
 
-        # Reshape our one-dimensional image into a two-channel side-by-side view of the Rigel's feed
-        frame             = np.reshape(frame, (frameWidth, frameWidth * 2))
-        frame_left        = frame[:, :frameWidth]
-        frame_right       = frame[:, frameWidth:]
-        frame_left_color  = cv2.cvtColor(frame_left , cv2.COLOR_GRAY2BGR)
-        frame_right_color = cv2.cvtColor(frame_right, cv2.COLOR_GRAY2BGR)
 
+        if not isELP:
+            # Reshape our one-dimensional image into a two-channel side-by-side view of the Rigel's feed            
+            frame             = np.reshape(frame, (frameWidth, frameWidth * 2))
+        #initialize base variables with a reference to prevent scoping issues, then assign based on sensor
+        frame_left = frame;
+        frame_right = frame;
+        frame_left_color  = frame;
+        frame_right_color = frame;
+        if isELP:
+            left_right_image = np.split(frame, 2, axis=1)
+            frame_left        = left_right_image[0]
+            frame_right       = left_right_image[1]
+            frame_left_color  = frame_left.copy()
+            #cv2.cvtColor(frame_left , cv2.COLOR_RGB2BGR)
+            frame_right_color = frame_right.copy()
+            frame_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
+            frame_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)            
+        else:
+            frame_left        = frame[:, :frameWidth]
+            frame_right       = frame[:, frameWidth:]
+            frame_left_color = cv2.cvtColor(frame_left, cv2.COLOR_GRAY2BGR)
+            frame_right_color = cv2.cvtColor(frame_right, cv2.COLOR_GRAY2BGR)
         # Detect the Chessboard Corners in the Left Image
         leftDetected, leftCorners = cv2.findChessboardCorners(frame_left, checkerboardDims, None, cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE + cv2.CALIB_CB_FAST_CHECK)
         if leftDetected:
@@ -66,7 +86,8 @@ while (not (key & 0xFF == ord('q'))):
 
         if (frameCount is 10):
           # Turn the Rigel LED Off
-          os.system(".\LFTool.exe xu set leap 27 0")
+          if not isELP:
+              os.system(".\LFTool.exe xu set leap 27 0")
         frameCount = frameCount + 1
 
 # When everything done, release the capture

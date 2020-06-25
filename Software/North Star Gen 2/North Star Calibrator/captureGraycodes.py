@@ -6,11 +6,14 @@ import time
 import pyrealsense2 as rs2
 import intelutils
 
+elp = False
 rigel = False
 realsense = True
 mock = False
-
-if rigel:
+if elp:
+  frameWidth = 1280
+  frameHeight = 480
+elif rigel:
   frameWidth  = 800
   frameHeight = 800
 elif realsense:
@@ -35,22 +38,28 @@ widthContinuum[:,   int(northStarSize[0] / 2) :] = widthContinuum[:, : int(north
 heightContinuum    = cv2.resize   (continuum      [:, None      ], northStarSize, interpolation=cv2.INTER_NEAREST)
 widthBits          = np.unpackbits(widthContinuum [:,    :, None].astype(np.uint8), axis=-1)
 heightBits         = np.unpackbits(heightContinuum[:,    :, None].astype(np.uint8), axis=-1)
-widthMeasuredBits  = np.zeros ((frameHeight, frameWidth * 2, 8), dtype=np.uint8)
-heightMeasuredBits = np.zeros ((frameHeight, frameWidth * 2, 8), dtype=np.uint8)
-lastResult         = np.zeros ((frameHeight, frameWidth * 2))
+widthMeasuredBits  = np.zeros ((frameHeight, frameWidth, 8), dtype=np.uint8)
+heightMeasuredBits = np.zeros ((frameHeight, frameWidth, 8), dtype=np.uint8)
+lastResult         = np.zeros ((frameHeight, frameWidth))
+#Again, we re assign for only the specific ELP sensor
+if not elp:
+  widthMeasuredBits  = np.zeros ((frameHeight, frameWidth* 2, 8), dtype=np.uint8)
+  heightMeasuredBits = np.zeros ((frameHeight, frameWidth* 2, 8), dtype=np.uint8)
+  lastResult         = np.zeros ((frameHeight, frameWidth* 2))
 displayedBuffer    = 100 - allWhite
 
 cv2.namedWindow      ("Graycode Viewport", 0)#cv2.WINDOW_NORMAL)
-cv2.moveWindow       ("Graycode Viewport", 1920, 0)
+cv2.moveWindow       ("Graycode Viewport", 0, 1080)
 cv2.setWindowProperty("Graycode Viewport", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 darkFrameBuffer    = np.zeros((720, 1280), dtype=np.uint8)
 
 #Initialize the Stereo Camera's feed
-if rigel:
+if rigel or elp:
   cap = cv2.VideoCapture(0)
   cap.set(cv2.CAP_PROP_FRAME_WIDTH , frameWidth)
   cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frameWidth)
-  cap.set(cv2.CAP_PROP_CONVERT_RGB , False)
+  if not elp:
+    cap.set(cv2.CAP_PROP_CONVERT_RGB , False)
 elif realsense:
   print("creating intel thread (at %f)" % time.time())
   cap = intelutils.intelCamThread(frame_callback = lambda frame: None)
@@ -85,9 +94,16 @@ while (not (key & 0xFF == ord('q'))):
     if (newFrame):
         time.sleep(0.1)
         print("got a new frame")
-        # Reshape our one-dimensional image into a two-channel side-by-side view of the Rigel's feed
-        frame       = np.reshape  (frame, (frameHeight, frameWidth * 2))
-        frame_color = cv2.cvtColor(frame , cv2.COLOR_GRAY2BGR)
+        #create the temp out of scope variable for re-assignment, if there's a better way to do this lemme know
+        frame_color = frame
+        if elp:
+          #just grab the frame, and convert the original to gray scale for processing
+          frame_color = frame.copy()
+          frame = cv2.cvtColor(frame , cv2.COLOR_BGR2GRAY)
+        else:
+        # Reshape our one-dimensional image into a two-channel side-by-side view of the Rigel's feed          
+          frame       = np.reshape  (frame, (frameHeight, frameWidth * 2))
+          frame_color = cv2.cvtColor(frame , cv2.COLOR_GRAY2BGR)
         bitIndex = int((stage-1)/2)
         if frameCount%6 is 0 and frameCount > 0: #key & 0xFF == ord('z'): #
           if stage is 0:

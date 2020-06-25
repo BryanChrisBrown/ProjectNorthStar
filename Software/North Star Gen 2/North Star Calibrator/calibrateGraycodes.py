@@ -8,8 +8,9 @@ import sys
 import json
 np.set_printoptions(suppress = True, precision=8)
 
+useFisheye = False
 rigel = False
-realsense = True
+realsense = False
 
 # Check to see if an existing calibration exists
 calibrated = False
@@ -116,8 +117,10 @@ def processData(data, cameraMatrix, distCoeffs, rot, polynomialDegree=3):
 
   # Fit the polynomial to rectilinear coordinates
   non_zero_pixel_coordinates = coordinates.reshape(-1, 1, 2)[non_zero_indices].astype(np.float)
-  non_zero_coordinates = cv2.fisheye.undistortPoints(non_zero_pixel_coordinates, cameraMatrix, distCoeffs, R=rot).reshape(-1, 2)
-
+  if(useFisheye):
+    non_zero_coordinates = cv2.fisheye.undistortPoints(non_zero_pixel_coordinates, cameraMatrix, distCoeffs, R=rot).reshape(-1, 2)
+  else:
+    non_zero_coordinates = cv2.undistortPoints(non_zero_pixel_coordinates, cameraMatrix, distCoeffs, R=rot).reshape(-1, 2)
   # Fit the multidimensional polynomials
   x_coeffs = polyfit2d(non_zero_data[:, 1],        # "Input"  X Axis
                        non_zero_data[:, 0],        # "Input"  Y Axis
@@ -171,8 +174,13 @@ def mouseMove(event, x, y, flags, param):
       coords_3d = np.ones((1, 1, 3))
       coords_3d[0, 0, 0] = coord[2]
       coords_3d[0, 0, 1] = coord[1]
-      coordd = cv2.fisheye.projectPoints(coords_3d, -cv2.Rodrigues(calibrations['R2'])[0], np.zeros((3)),
+      coordd = coord
+      if(useFisheye):
+        coordd = cv2.fisheye.projectPoints(coords_3d, -cv2.Rodrigues(calibrations['R2'])[0], np.zeros((3)),
                                          calibrations['leftCameraMatrix'], calibrations['leftDistCoeffs'])[0].reshape(2)
+      else:
+        coordd = cv2.projectPoints(coords_3d, -cv2.Rodrigues(calibrations['R2'])[0], np.zeros((3)),
+                                  calibrations['leftCameraMatrix'], calibrations['leftDistCoeffs'])[0].reshape(2)                                         
       warpedPos = (int(coordd[0]), int(coordd[1]))
 
       #warpedPos = (int(coord[2] * 800), int(coord[1] * 800))

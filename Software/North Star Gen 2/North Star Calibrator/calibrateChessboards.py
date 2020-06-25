@@ -6,16 +6,15 @@ from os import listdir
 
 # CONFIGURATION PARAMETERS
 
-# The number of images to capture before beginning calibration
-numImagesRequired = 10
-# The dimension of a single square on the checkerboard in METERS
-checkerboardDimension = 0.0266 # This equates to 26 millimeter wide squares
-# The number of inside corners on the width (long axis) of the checkerboard
-checkerboardWidth = 9
-# The number of inside corners on the height (short axis) of the checkerboard
-checkerboardHeight = 7
 
-# Chessboard parameters
+# The dimension of a single square on the checkerboard in METERS
+checkerboardDimension = 0.029 # This equates to 26 millimeter wide squares
+# The number of inside corners on the width (long axis) of the checkerboard
+checkerboardWidth = 8
+# The number of inside corners on the height (short axis) of the checkerboard
+checkerboardHeight = 6
+usesFisheye = False
+ # Chessboard parameters
 # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ...., (checkerboardWidth, checkerboardHeight,0)
 objpp = np.zeros((checkerboardHeight*checkerboardWidth,3), np.float32)
 objpp[:,:2] = np.mgrid[0:checkerboardWidth,0:checkerboardHeight].T.reshape(-1,2)
@@ -86,9 +85,15 @@ for leftFile, rightFile in zip(leftFiles, rightFiles):
         # Once we have all the data we need, begin calibrating!!!
         if (len(allLeftCorners) == len(leftFiles) and not calibrated):
             print("Beginning Left Camera Calibration")
-            leftValid,  leftCameraMatrix,  leftDistCoeffs,  leftRvecs,  leftTvecs  = cv2.fisheye.calibrate(objp, allLeftCorners,  (leftFrame.shape[0],  leftFrame.shape[1]),  None, None)
+            if(usesFisheye):
+                leftValid,  leftCameraMatrix,  leftDistCoeffs,  leftRvecs,  leftTvecs  = cv2.fisheye.calibrate(objp, allLeftCorners,  (leftFrame.shape[0],  leftFrame.shape[1]),  None, None)
+            else:
+                leftValid, leftCameraMatrix, leftDistCoeffs, leftRvecs, leftTvecs = cv2.calibrateCamera(objp, allLeftCorners, (leftFrame.shape[0],  leftFrame.shape[1]),None,None)
             print("Beginning Right Camera Calibration")
-            rightValid, rightCameraMatrix, rightDistCoeffs, rightRvecs, rightTvecs = cv2.fisheye.calibrate(objp, allRightCorners, (rightFrame.shape[0], rightFrame.shape[1]), None, None)
+            if(usesFisheye):
+                rightValid, rightCameraMatrix, rightDistCoeffs, rightRvecs, rightTvecs = cv2.fisheye.calibrate(objp, allRightCorners, (rightFrame.shape[0], rightFrame.shape[1]), None, None)                
+            else:
+                rightValid, rightCameraMatrix, rightDistCoeffs, rightRvecs, rightTvecs = cv2.calibrateCamera(objp, allRightCorners, (leftFrame.shape[0],  leftFrame.shape[1]),None,None) 
             if(leftValid):
                 print("Left Camera Successfully Calibrated!!")
                 print("Left Camera Matrix:")
@@ -103,47 +108,76 @@ for leftFile, rightFile in zip(leftFiles, rightFiles):
                 print(rightDistCoeffs)
             if(leftValid and rightValid):
                 print("WE DID IT, HOORAY!   Now beginning stereo calibration...")
-                valid, leftCameraMatrix, leftDistCoeffs, rightCameraMatrix, rightDistCoeffs, leftToRightRot, leftToRightTrans= (
-                    cv2.fisheye.stereoCalibrate(objp, allLeftCorners, allRightCorners, leftCameraMatrix, leftDistCoeffs, rightCameraMatrix, rightDistCoeffs, (leftFrame.shape[0], leftFrame.shape[1]), None, None))
-
-                if(valid):
+                if(usesFisheye):
+                    valid, leftCameraMatrix, leftDistCoeffs, rightCameraMatrix, rightDistCoeffs, leftToRightRot, leftToRightTrans= (
+                        cv2.fisheye.stereoCalibrate(objp, allLeftCorners, allRightCorners, leftCameraMatrix, leftDistCoeffs, rightCameraMatrix, rightDistCoeffs, (leftFrame.shape[0], leftFrame.shape[1]), None, None))
+                    if(valid):
+                        # Construct the stereo-rectified parameters for display
+                        R1, R2, P1, P2, Q = cv2.fisheye.stereoRectify(leftCameraMatrix,   leftDistCoeffs, 
+                                                                    rightCameraMatrix,  rightDistCoeffs, 
+                                                                    (leftFrame.shape[0], leftFrame.shape[1]),
+                                                                    leftToRightRot,     leftToRightTrans,
+                                                                    0,                 (leftFrame.shape[1], leftFrame.shape[0]))
+                        leftUndistortMap  = [None, None]
+                        leftUndistortMap[0], leftUndistortMap[1]   = cv2.fisheye.initUndistortRectifyMap(leftCameraMatrix, leftDistCoeffs, 
+                                                                                                        R1, P1, (leftFrame.shape[1], leftFrame.shape[0]), cv2.CV_32FC1)
+                        rightUndistortMap = [None, None]
+                        rightUndistortMap[0], rightUndistortMap[1] = cv2.fisheye.initUndistortRectifyMap(rightCameraMatrix, rightDistCoeffs, 
+                                                                                                        R2, P2, (leftFrame.shape[1], leftFrame.shape[0]), cv2.CV_32FC1)
+            
+                        print("Stereo Calibration Completed!")
+                        print("Left to Right Rotation Matrix:")
+                        print(leftToRightRot)
+                        print("Left to Right Translation:")
+                        print(leftToRightTrans)
+                        np.savez("cameraCalibration.npz", leftCameraMatrix  = leftCameraMatrix,  leftDistCoeffs   = leftDistCoeffs, 
+                                                        rightCameraMatrix = rightCameraMatrix, rightDistCoeffs  = rightDistCoeffs, 
+                                                        R1 = R1, R2 = R2, baseline = np.linalg.norm(leftToRightTrans))
+                        calibrated = True
+                else:
+                    flags = 0
+                    flags |= cv2.CALIB_FIX_INTRINSIC
+                    flags |= cv2.CALIB_USE_INTRINSIC_GUESS
+                    flags |= cv2.CALIB_FIX_FOCAL_LENGTH
+                    flags |= cv2.CALIB_ZERO_TANGENT_DIST
                     # Construct the stereo-rectified parameters for display
-                    R1, R2, P1, P2, Q = cv2.fisheye.stereoRectify(leftCameraMatrix,   leftDistCoeffs, 
-                                                                   rightCameraMatrix,  rightDistCoeffs, 
-                                                                  (leftFrame.shape[0], leftFrame.shape[1]),
-                                                                   leftToRightRot,     leftToRightTrans,
-                                                                   0,                 (leftFrame.shape[1], leftFrame.shape[0]))
-                    #R1 = np.eye(3)
-                    #R2 = np.eye(3)
-                    #P1 = leftCameraMatrix
-                    #P2 = rightCameraMatrix
-
-                    leftUndistortMap  = [None, None]
-                    leftUndistortMap[0], leftUndistortMap[1]   = cv2.fisheye.initUndistortRectifyMap(leftCameraMatrix, leftDistCoeffs, 
-                                                                                                     R1, P1, (leftFrame.shape[1], leftFrame.shape[0]), cv2.CV_32FC1)
-                    rightUndistortMap = [None, None]
-                    rightUndistortMap[0], rightUndistortMap[1] = cv2.fisheye.initUndistortRectifyMap(rightCameraMatrix, rightDistCoeffs, 
-                                                                                                     R2, P2, (leftFrame.shape[1], leftFrame.shape[0]), cv2.CV_32FC1)
-        
-                    print("Stereo Calibration Completed!")
-                    print("Left to Right Rotation Matrix:")
-                    print(leftToRightRot)
-                    print("Left to Right Translation:")
-                    print(leftToRightTrans)
-                    np.savez("cameraCalibration.npz", leftCameraMatrix  = leftCameraMatrix,  leftDistCoeffs   = leftDistCoeffs, 
-                                                      rightCameraMatrix = rightCameraMatrix, rightDistCoeffs  = rightDistCoeffs, 
-                                                      R1 = R1, R2 = R2, baseline = np.linalg.norm(leftToRightTrans))
-                    calibrated = True
+                    stereocalib_criteria = (cv2.TERM_CRITERIA_MAX_ITER + cv2.TERM_CRITERIA_EPS, 100, 1e-5)
+                    #valid, leftCameraMatrix, leftDistCoeffs, rightCameraMatrix, rightDistCoeffs, leftToRightRot, leftToRightTrans= (                        
+                    valid, leftCameraMatrix, leftDistCoeffs, rightCameraMatrix, rightDistCoeffs, leftToRightRot, leftToRightTrans, E,F =(cv2.stereoCalibrate(objp, allLeftCorners, allRightCorners, leftCameraMatrix, leftDistCoeffs, rightCameraMatrix, rightDistCoeffs, (leftFrame.shape[0], leftFrame.shape[1]), None, None))                    
+                    if(valid):
+                        print('Intrinsic_mtx_1', leftCameraMatrix)
+                        print('dist_1', leftDistCoeffs)
+                        print('Intrinsic_mtx_2', rightCameraMatrix)
+                        print('dist_2', rightDistCoeffs)
+                        print('R', leftToRightRot)
+                        print('T', leftToRightTrans)
+                        print('E', E)
+                        print('F', F)
+                        R1, R2, P1, P2 = cv2.stereoRectify(leftCameraMatrix,   leftDistCoeffs, rightCameraMatrix,  rightDistCoeffs, (leftFrame.shape[0], leftFrame.shape[1]),leftToRightRot,leftToRightTrans,0,(leftFrame.shape[1], leftFrame.shape[0]))[0:4]
+                        leftUndistortMap  = [None, None]
+                        leftUndistortMap[0], leftUndistortMap[1]  = cv2.initUndistortRectifyMap(leftCameraMatrix,leftDistCoeffs,R1,P1,(leftFrame.shape[1], leftFrame.shape[0]),5)
+                        rightUndistortMap = [None, None]
+                        rightUndistortMap[0], rightUndistortMap[1] = cv2.initUndistortRectifyMap(rightCameraMatrix,rightDistCoeffs,R2,P2,(leftFrame.shape[1], leftFrame.shape[0]),5)
+                        print("Stereo Calibration Completed!")
+                        print("Left to Right Rotation Matrix:")
+                        print(leftToRightRot)
+                        print("Left to Right Translation:")
+                        print(leftToRightTrans)                                        
+                        np.savez("cameraCalibration.npz", leftCameraMatrix  = leftCameraMatrix,  leftDistCoeffs   = leftDistCoeffs, 
+                                                        rightCameraMatrix = rightCameraMatrix, rightDistCoeffs  = rightDistCoeffs, 
+                                                        R1 = R1, R2 = R2, baseline = np.linalg.norm(leftToRightTrans))
+                        calibrated = True
 
 # Now that we're calibrated, let's look at what those calibrated images look like...
-
 #Initialize the Stereo Camera's feed
-frameWidth = 800
+#note I've used the resolution of the ELP sensor
+frameWidth = 1280
+frameHeight = 480
 cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, frameWidth)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frameWidth)
-cap.set(cv2.CAP_PROP_CONVERT_RGB, False)
-
+cap.set(cv2.CAP_PROP_FRAME_WIDTH , frameWidth)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT , frameHeight)
+if(usesFisheye):
+    cap.set(cv2.CAP_PROP_CONVERT_RGB,False);
 key = cv2.waitKey(1)
 while (not (key & 0xFF == ord('q'))):
     key = cv2.waitKey(1)
@@ -155,12 +189,15 @@ while (not (key & 0xFF == ord('q'))):
         ret, frame = cap.read()
 
         # Reshape our one-dimensional image into a two-channel side-by-side view of the Rigel's feed
-        frame             = np.reshape(frame, (frameWidth, frameWidth * 2))
-        frame_left        = frame[:, :frameWidth]
-        frame_right       = frame[:, frameWidth:]
-        frame_left_color  = cv2.cvtColor(frame_left , cv2.COLOR_GRAY2BGR)
-        frame_right_color = cv2.cvtColor(frame_right, cv2.COLOR_GRAY2BGR)
-
+        left_right_image = np.split(frame, 2, axis=1)
+        frame_left        = left_right_image[0]
+        frame_right       = left_right_image[1]
+        if(usesFisheye):
+            frame_left_color  = cv2.cvtColor(frame_left , cv2.COLOR_GRAY2BGR)
+            frame_right_color = cv2.cvtColor(frame_right, cv2.COLOR_GRAY2BGR)            
+        else:
+            frame_left_color  = frame_left
+            frame_right_color = frame_right
         # Display the Marker Tracking Overlay
         stereoImages = []
         if(calibrated):
