@@ -69,6 +69,7 @@ if rigel:
 # if realsense:
 
 
+
 # Initialize 3D Visualizer
 frameCount = -3
 captureNum = 0
